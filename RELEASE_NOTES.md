@@ -1,8 +1,10 @@
 # Release Notes
 
-## v1.0.0 — Slice 1: Kernel + Contracts (2026-07-28)
+## v1.0.1 — Official Slice 1 Release (2026-08-04)
 
-Vormia Go v1.0.0 is the first stable release. It delivers the framework's spine: you can boot an application, wire in your chosen drivers, register routes and middleware, serve HTTP, and shut down gracefully — all without the framework ever depending on a concrete router, database, or cache implementation.
+Vormia Go **v1.0.1** is the official Slice 1 release. It delivers the framework's spine: you can boot an application, wire in your chosen drivers, register routes and middleware, serve HTTP, and shut down gracefully — all without the framework ever depending on a concrete router, database, or cache implementation.
+
+This tag supersedes `v1.0.0` as the recommended install target. The feature set is Slice 1 (kernel + contracts); v1.0.1 packages that spine with the release notes and documentation refinements that landed after the initial tag.
 
 ### What this release does
 
@@ -40,7 +42,7 @@ The release includes an end-to-end test that runs the kernel with the real chi a
 ### Install
 
 ```bash
-go get github.com/vormialabs/vormia-go@v1.0.0
+go get github.com/vormialabs/vormia-go@v1.0.1
 ```
 
 Requires Go 1.26+.
@@ -48,3 +50,9 @@ Requires Go 1.26+.
 ### What's not in this release
 
 ORM/query builder, validation, auth, and CLI scaffolding are planned for later slices. Slice 2 will focus on HTTP ergonomics: JSON/error helpers, request context, and a router-agnostic `Param`.
+
+---
+
+## v1.0.0 — Slice 1: Kernel + Contracts (2026-07-28)
+
+Initial Slice 1 tag. Prefer **v1.0.1** for new installs.

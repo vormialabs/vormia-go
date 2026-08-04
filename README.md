@@ -2,12 +2,12 @@
 
 Vormia Go — a modular, Laravel-inspired application framework for Go that wires swappable router, database, and cache drivers behind stable contracts.
 
-**Version:** v1.0.0 — Slice 1 (kernel + contracts). The framework spine is in place: boot an app, wire drivers, register routes, serve, and shut down gracefully. ORM, validation, auth, and CLI scaffolding come in later slices.
+**Version:** v1.0.1 — Slice 1 (kernel + contracts). The framework spine is in place: boot an app, wire drivers, register routes, serve, and shut down gracefully. ORM, validation, auth, and CLI scaffolding come in later slices.
 
 ## Install
 
 ```bash
-go get github.com/vormialabs/vormia-go@v1.0.0
+go get github.com/vormialabs/vormia-go@v1.0.1
 ```
 
 Requires Go 1.26+.
