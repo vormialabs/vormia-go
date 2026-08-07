@@ -6,7 +6,7 @@ Instructions for AI coding assistants (Cursor, Codex, Copilot, MCP-based agents)
 
 ## 1. Package Facts (memorize these)
 
-- **Module:** `github.com/vormialabs/vormia-go` — **v1.1.1**, requires **Go 1.26+**
+- **Module:** `github.com/vormialabs/vormia-go` — **v1.1.3**, requires **Go 1.26+**
 - **Status:** Kernel + contracts + connection registry (`db`) + migration engine (`migrate`, including `Status`). No ORM, no validation, no auth, no CLI commands, no JSON helpers, no router-agnostic `Param`. Do not pretend those exist.
 - **Production packages:**
   - `contract` (`contract/contract.go`) — `Router`, `Database`, `Cache`. Stdlib imports only.
@@ -254,7 +254,7 @@ A driver is a **separate Go module** that structurally satisfies exactly one con
 | Writing `$1` placeholders directly | Write `?` and pass through `k.DB.Rebind(...)` |
 | Passing `context.Background()` in handlers | Pass `req.Context()` so client disconnects cancel work |
 | Calling `k.Run` in unit tests | Use `k.Router.ServeHTTP` with `httptest` |
-| Adding `Group`, `Param`, JSON helpers, ORM, or CLI migrate commands as if they exist | Not in v1.1.1; note the gap or implement locally in the app |
+| Adding `Group`, `Param`, JSON helpers, ORM, or CLI migrate commands as if they exist | Not in v1.1.3; note the gap or implement locally in the app |
 | Assuming MySQL DDL rolls back with `BeginTx` | MySQL auto-commits DDL; keep migrations small |
 | Manual `defer db.Close()` alongside `k.Run` | `Run` closes attached drivers on shutdown; registry needs its own `Close` if you keep one |
 | Adding fields to `Kernel` config via new `New` parameters | Add a functional `Option` (`WithX`) instead |

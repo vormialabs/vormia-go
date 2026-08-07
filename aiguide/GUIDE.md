@@ -2,13 +2,13 @@
 
 A walkthrough of the framework's design, the packages that make it up, and the lifecycle of an app built on it. Read the [README](../README.md) first for install and quick-start; this guide explains the *why* and *how* underneath. Release history: [RELEASE_NOTES.md](../RELEASE_NOTES.md).
 
-**Version:** v1.1.1 — kernel + contracts, connection registry (`db`), migration engine (`migrate`) including `Status`
+**Version:** v1.1.3 — kernel + contracts, connection registry (`db`), migration engine (`migrate`) including `Status`
 
 ---
 
 ## 1. The Big Idea
 
-vormia-go is a **Laravel-inspired application spine for Go**. Like Laravel, it gives you a kernel that boots the app, wires services (database, cache, router), registers routes, serves HTTP, and shuts down gracefully. From v1.1.0 it also resolves **named database connections** and runs **SQL migrations**; v1.1.1 adds **`Status`** for applied vs pending — still without importing any concrete driver.
+vormia-go is a **Laravel-inspired application spine for Go**. Like Laravel, it gives you a kernel that boots the app, wires services (database, cache, router), registers routes, serves HTTP, and shuts down gracefully. From v1.1.0 it also resolves **named database connections** and runs **SQL migrations**; **`Status`** (applied vs pending) ships with the current tag — still without importing any concrete driver.
 
 Unlike Laravel, it does **not** ship any concrete implementations. The framework only knows about *interfaces* (and config keys). Your application chooses the concrete drivers (chi, PostgreSQL, Redis, ...) and either hands them to the kernel or registers **openers** so the registry can open them on demand.
 
@@ -343,7 +343,7 @@ Laravel translation table, roughly:
 
 ## 8. Current Scope and What's Next
 
-**v1.1.1** includes: kernel, three contracts, five external drivers, named connection registry, and migration engine (including `Status`) — plus tests proving they compose without Docker.
+**v1.1.3** includes: kernel, three contracts, five external drivers, named connection registry, and migration engine (including `Status`) — plus tests proving they compose without Docker.
 
 Not here yet:
 
