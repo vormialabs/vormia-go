@@ -58,3 +58,46 @@ func TestUpRollback(t *testing.T) {
 		t.Fatal("table should be gone after rollback")
 	}
 }
+
+func TestStatus(t *testing.T) {
+	ctx := context.Background()
+
+	db, err := sqlite.Open(sqlite.Config{Path: ":memory:"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src := fstest.MapFS{
+		"20260101_a.up.sql":   {Data: []byte(`CREATE TABLE a (id INTEGER PRIMARY KEY)`)},
+		"20260101_a.down.sql": {Data: []byte(`DROP TABLE a`)},
+		"20260102_b.up.sql":   {Data: []byte(`CREATE TABLE b (id INTEGER PRIMARY KEY)`)},
+		"20260102_b.down.sql": {Data: []byte(`DROP TABLE b`)},
+	}
+
+	m := migrate.New(db, src)
+
+	rows, err := m.Status(ctx)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	if rows[0].Applied || rows[1].Applied {
+		t.Fatal("nothing should be applied yet")
+	}
+
+	if _, err := m.Up(ctx); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+
+	rows, err = m.Status(ctx)
+	if err != nil {
+		t.Fatalf("status after up: %v", err)
+	}
+	for _, r := range rows {
+		if !r.Applied || r.Batch != 1 {
+			t.Fatalf("expected applied batch 1, got %+v", r)
+		}
+	}
+}

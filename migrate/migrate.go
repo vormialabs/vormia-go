@@ -213,6 +213,34 @@ func (m *Migrator) Version(ctx context.Context) (string, error) {
 	return latest, nil
 }
 
+// StatusRow reports one migration's state.
+type StatusRow struct {
+	Version string
+	Applied bool
+	Batch   int
+}
+
+// Status lists every migration on disk with whether it has run.
+func (m *Migrator) Status(ctx context.Context) ([]StatusRow, error) {
+	if err := m.ensure(ctx); err != nil {
+		return nil, err
+	}
+	all, err := m.versions()
+	if err != nil {
+		return nil, err
+	}
+	done, err := m.applied(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]StatusRow, 0, len(all))
+	for _, v := range all {
+		b, ok := done[v]
+		out = append(out, StatusRow{Version: v, Applied: ok, Batch: b})
+	}
+	return out, nil
+}
+
 func maxBatch(applied map[string]int) int {
 	max := 0
 	for _, b := range applied {
