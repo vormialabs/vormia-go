@@ -1,5 +1,45 @@
 # Release Notes
 
+## v1.1.1 — Migrator.Status (2026-08-07)
+
+Vormia Go **v1.1.1** adds `Migrator.Status` so apps and a future CLI can list every on-disk migration with whether it has been applied (and which batch).
+
+### What this release does
+
+**`Status(ctx)`** returns `[]StatusRow` for every `<version>.up.sql` found in the migration source, in apply order:
+
+| Field | Meaning |
+|-------|---------|
+| `Version` | Migration version (filename without `.up.sql`) |
+| `Applied` | `true` if the version is in `schema_migrations` |
+| `Batch` | Batch number when applied; `0` if pending |
+
+Ensures the tracking table exists (same as `Up` / `Version`), then joins disk versions with applied rows. No SQL files are executed.
+
+This is the library surface a thin `migrate:status` CLI will call; the CLI itself is still not in this module.
+
+### Install
+
+```bash
+go get github.com/vormialabs/vormia-go@v1.1.1
+```
+
+Requires Go 1.26+.
+
+### Testing
+
+```bash
+go test -v ./...
+```
+
+### What's not in this release
+
+CLI `migrate*` / `db:*` commands and `--database` flag wiring remain the next step. ORM, validation, auth, and HTTP ergonomics remain later work.
+
+Docs: [README](README.md), [aiguide/GUIDE.md](aiguide/GUIDE.md), [aiguide/CURSOR_CODEX_MCP_GUIDE.md](aiguide/CURSOR_CODEX_MCP_GUIDE.md).
+
+---
+
 ## v1.1.0 — Connection Registry + Migration Engine (2026-08-07)
 
 Vormia Go **v1.1.0** adds two engine-agnostic packages on top of the Slice 1 kernel: a named connection registry and a SQL migration engine. Both sit on `contract.Database` and import no concrete drivers.
@@ -21,6 +61,8 @@ The app registers one `Opener` per driver it imports; the registry looks up the 
 - `Reset` — roll everything back
 - `Version` — latest applied version
 
+(`Status` for applied vs pending shipped in **v1.1.1**.)
+
 Placeholder style for tracking-table inserts/deletes goes through the driver's `Rebind`.
 
 **Dependency.** Production `db` depends on `vormia-go-core@v1.1.0` (`config.GetString`, `config.Prefixed`). Production `migrate` depends only on `contract` + stdlib. Drivers remain test-only (SQLite in-memory + `fstest.MapFS`).
@@ -40,7 +82,7 @@ Placeholder style for tracking-table inserts/deletes goes through the driver's `
 go get github.com/vormialabs/vormia-go@v1.1.0
 ```
 
-Requires Go 1.26+.
+Requires Go 1.26+. Prefer **v1.1.1** for new installs (`Status` included).
 
 ### Testing
 
@@ -52,7 +94,7 @@ Boundary check: `go list -deps ./db ./migrate` must not list any `vormia-go-driv
 
 ### What's not in this release
 
-CLI `migrate*` / `db:*` commands, `--database` flag wiring, and starterkit opener scaffolding land in the next step. ORM, validation, auth, and HTTP ergonomics remain later work.
+CLI `migrate*` / `db:*` commands, `--database` flag wiring, and starterkit opener scaffolding land in the next step. `Migrator.Status` shipped in **v1.1.1**. ORM, validation, auth, and HTTP ergonomics remain later work.
 
 Docs: [README](README.md), [aiguide/GUIDE.md](aiguide/GUIDE.md), [aiguide/CURSOR_CODEX_MCP_GUIDE.md](aiguide/CURSOR_CODEX_MCP_GUIDE.md).
 
@@ -62,7 +104,7 @@ Docs: [README](README.md), [aiguide/GUIDE.md](aiguide/GUIDE.md), [aiguide/CURSOR
 
 Vormia Go **v1.0.1** is the official Slice 1 release. It delivers the framework's spine: you can boot an application, wire in your chosen drivers, register routes and middleware, serve HTTP, and shut down gracefully — all without the framework ever depending on a concrete router, database, or cache implementation.
 
-This tag supersedes `v1.0.0` as the recommended Slice 1 install target. Prefer **v1.1.0** for new installs (registry + migrations).
+This tag supersedes `v1.0.0` as the recommended Slice 1 install target. Prefer **v1.1.1** for new installs (registry + migrations + status).
 
 ### What this release does
 
@@ -107,10 +149,10 @@ Requires Go 1.26+.
 
 ### What's not in this release
 
-ORM/query builder, validation, auth, and CLI scaffolding are planned for later slices. Connection registry and migrations shipped later in **v1.1.0**.
+ORM/query builder, validation, auth, and CLI scaffolding are planned for later slices. Connection registry and migrations shipped later in **v1.1.0**; `Migrator.Status` in **v1.1.1**.
 
 ---
 
 ## v1.0.0 — Slice 1: Kernel + Contracts (2026-07-28)
 
-Initial Slice 1 tag. Prefer **v1.1.0** for new installs.
+Initial Slice 1 tag. Prefer **v1.1.1** for new installs.

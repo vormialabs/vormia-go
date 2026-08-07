@@ -2,14 +2,14 @@
 
 Vormia Go — a modular, Laravel-inspired application framework for Go that wires swappable router, database, and cache drivers behind stable contracts.
 
-**Version:** v1.1.0 — kernel + contracts, named connection registry (`db`), and SQL migration engine (`migrate`). ORM, validation, auth, and CLI scaffolding come in later slices.
+**Version:** v1.1.1 — kernel + contracts, named connection registry (`db`), and SQL migration engine (`migrate`) including `Status`. ORM, validation, auth, and CLI scaffolding come in later slices.
 
 Human walkthrough: [aiguide/GUIDE.md](aiguide/GUIDE.md). AI editor rules: [aiguide/CURSOR_CODEX_MCP_GUIDE.md](aiguide/CURSOR_CODEX_MCP_GUIDE.md). Changelog: [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## Install
 
 ```bash
-go get github.com/vormialabs/vormia-go@v1.1.0
+go get github.com/vormialabs/vormia-go@v1.1.1
 ```
 
 Requires Go 1.26+. Named connections use [`vormia-go-core/config`](https://github.com/vormialabs/vormia-go-core) (`GetString`, `Prefixed`).
@@ -128,6 +128,7 @@ Apply and roll back SQL files against any `contract.Database`. Pass an `fs.FS` (
 m := migrate.New(database, os.DirFS("database/migrations"))
 run, err := m.Up(ctx)           // pending migrations, one new batch
 rolled, err := m.Rollback(ctx, 0) // latest batch (steps <= 0); or N newest
+rows, err := m.Status(ctx)      // every on-disk version + applied/batch
 ```
 
 | Method | Purpose |
@@ -137,6 +138,7 @@ rolled, err := m.Rollback(ctx, 0) // latest batch (steps <= 0); or N newest
 | `Rollback(ctx, steps)` | `steps <= 0` = latest batch; otherwise that many, newest first |
 | `Reset(ctx)` | Roll back everything |
 | `Version(ctx)` | Latest applied version, or `""` |
+| `Status(ctx)` | Every on-disk migration with `Applied` / `Batch` (`[]StatusRow`) |
 
 ## Contracts
 

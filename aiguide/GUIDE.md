@@ -2,13 +2,13 @@
 
 A walkthrough of the framework's design, the packages that make it up, and the lifecycle of an app built on it. Read the [README](../README.md) first for install and quick-start; this guide explains the *why* and *how* underneath. Release history: [RELEASE_NOTES.md](../RELEASE_NOTES.md).
 
-**Version:** v1.1.0 — kernel + contracts, connection registry (`db`), migration engine (`migrate`)
+**Version:** v1.1.1 — kernel + contracts, connection registry (`db`), migration engine (`migrate`) including `Status`
 
 ---
 
 ## 1. The Big Idea
 
-vormia-go is a **Laravel-inspired application spine for Go**. Like Laravel, it gives you a kernel that boots the app, wires services (database, cache, router), registers routes, serves HTTP, and shuts down gracefully. From v1.1.0 it also resolves **named database connections** and runs **SQL migrations** — still without importing any concrete driver.
+vormia-go is a **Laravel-inspired application spine for Go**. Like Laravel, it gives you a kernel that boots the app, wires services (database, cache, router), registers routes, serves HTTP, and shuts down gracefully. From v1.1.0 it also resolves **named database connections** and runs **SQL migrations**; v1.1.1 adds **`Status`** for applied vs pending — still without importing any concrete driver.
 
 Unlike Laravel, it does **not** ship any concrete implementations. The framework only knows about *interfaces* (and config keys). Your application chooses the concrete drivers (chi, PostgreSQL, Redis, ...) and either hands them to the kernel or registers **openers** so the registry can open them on demand.
 
@@ -250,6 +250,7 @@ m := migrate.New(database, os.DirFS("database/migrations"))
 run, err := m.Up(ctx)              // pending → one new batch
 rolled, err := m.Rollback(ctx, 0)  // latest batch
 ver, err := m.Version(ctx)         // latest applied, or ""
+rows, err := m.Status(ctx)         // every on-disk version + Applied/Batch
 ```
 
 | Method | Purpose |
@@ -259,6 +260,7 @@ ver, err := m.Version(ctx)         // latest applied, or ""
 | `Rollback(ctx, steps)` | `steps <= 0` = last batch; else N newest |
 | `Reset(ctx)` | Roll everything back, newest first |
 | `Version(ctx)` | Latest applied version |
+| `Status(ctx)` | Every on-disk migration with `Applied` / `Batch` (`[]StatusRow`) |
 
 ### Honest cross-engine gotchas
 
@@ -266,7 +268,7 @@ ver, err := m.Version(ctx)         // latest applied, or ""
 2. **Multi-statement MySQL** needs `multiStatements=true` on the DSN (or one statement per file). A statement splitter is a future enhancement.
 3. **Your app migrations** may use engine-specific SQL if you are not switching engines; the tracking table stays in the portable subset.
 
-Laravel translation: this is the Go equivalent of `php artisan migrate` / `migrate:rollback`, but as a library API today — CLI thin front-ends come next.
+Laravel translation: this is the Go equivalent of `php artisan migrate` / `migrate:rollback` / `migrate:status`, but as a library API today — CLI thin front-ends come next.
 
 ---
 
@@ -330,7 +332,7 @@ Laravel translation table, roughly:
 | Service container binding an interface to a concrete | You pass the concrete into `New` / `WithDB` as an interface value |
 | `config/database.php` connections | `db.Registry` + `DB_*` / `DB_<NAME>_*` config |
 | `DB::connection('mysql2')` | `reg.Connection("mysql2")` |
-| `php artisan migrate` / `migrate:rollback` | `migrate.Migrator` `Up` / `Rollback` (CLI next) |
+| `php artisan migrate` / `migrate:rollback` / `migrate:status` | `migrate.Migrator` `Up` / `Rollback` / `Status` (CLI next) |
 | `routes/web.php` | The `k.Routes(func(r contract.Router) { ... })` callback |
 | Global middleware in `Kernel::$middleware` | `k.Use(...)` |
 | `php artisan serve` / FPM lifecycle | `k.Run(":8080")` with built-in graceful shutdown |
@@ -341,7 +343,7 @@ Laravel translation table, roughly:
 
 ## 8. Current Scope and What's Next
 
-**v1.1.0** includes: kernel, three contracts, five external drivers, named connection registry, and migration engine — plus tests proving they compose without Docker.
+**v1.1.1** includes: kernel, three contracts, five external drivers, named connection registry, and migration engine (including `Status`) — plus tests proving they compose without Docker.
 
 Not here yet:
 

@@ -6,13 +6,13 @@ Instructions for AI coding assistants (Cursor, Codex, Copilot, MCP-based agents)
 
 ## 1. Package Facts (memorize these)
 
-- **Module:** `github.com/vormialabs/vormia-go` — **v1.1.0**, requires **Go 1.26+**
-- **Status:** Kernel + contracts + connection registry (`db`) + migration engine (`migrate`). No ORM, no validation, no auth, no CLI commands, no JSON helpers, no router-agnostic `Param`. Do not pretend those exist.
+- **Module:** `github.com/vormialabs/vormia-go` — **v1.1.1**, requires **Go 1.26+**
+- **Status:** Kernel + contracts + connection registry (`db`) + migration engine (`migrate`, including `Status`). No ORM, no validation, no auth, no CLI commands, no JSON helpers, no router-agnostic `Param`. Do not pretend those exist.
 - **Production packages:**
   - `contract` (`contract/contract.go`) — `Router`, `Database`, `Cache`. Stdlib imports only.
   - `app` (`app/kernel.go`) — `Kernel`, `New`, `WithDB`, `WithCache`, `Use`, `Routes`, `Run`.
   - `db` (`db/registry.go`) — `ConnConfig`, `Opener`, `Registry` (`New`, `RegisterOpener`, `Default`, `Resolve`, `Connection`, `Close`). Imports `contract` + `vormia-go-core/config` only.
-  - `migrate` (`migrate/migrate.go`) — `Migrator` (`New`, `Up`, `Rollback`, `Reset`, `Version`). Imports `contract` + stdlib only (`fs`, `context`, …).
+  - `migrate` (`migrate/migrate.go`) — `Migrator` (`New`, `Up`, `Rollback`, `Reset`, `Version`, `Status`), `StatusRow`. Imports `contract` + stdlib only (`fs`, `context`, …).
 - **Core dependency:** `github.com/vormialabs/vormia-go-core@v1.1.0` for `config` (`GetString`, `Prefixed`). Core stays DB-agnostic; **vormia-go owns** the `DB_*` / `DB_<NAME>_*` connection naming rules.
 - **Official drivers** (separate modules, chosen by the application, never by the framework):
 
@@ -111,9 +111,10 @@ m := migrate.New(database, os.DirFS("database/migrations"))
 run, err := m.Up(ctx)
 rolled, err := m.Rollback(ctx, 0) // latest batch; use steps > 0 for N newest
 ver, err := m.Version(ctx)
+rows, err := m.Status(ctx) // []StatusRow{Version, Applied, Batch} in apply order
 ```
 
-Files: `<version>.up.sql` / `<version>.down.sql`. Tracking table: `schema_migrations`. Prefer one statement per file for MySQL (DDL is not transactional; multi-statement needs DSN `multiStatements=true`).
+Files: `<version>.up.sql` / `<version>.down.sql`. Tracking table: `schema_migrations`. Prefer one statement per file for MySQL (DDL is not transactional; multi-statement needs DSN `multiStatements=true`). `Status` does not run SQL files — it only reports disk vs applied.
 
 ### Database access from a handler
 
@@ -253,7 +254,7 @@ A driver is a **separate Go module** that structurally satisfies exactly one con
 | Writing `$1` placeholders directly | Write `?` and pass through `k.DB.Rebind(...)` |
 | Passing `context.Background()` in handlers | Pass `req.Context()` so client disconnects cancel work |
 | Calling `k.Run` in unit tests | Use `k.Router.ServeHTTP` with `httptest` |
-| Adding `Group`, `Param`, JSON helpers, ORM, or CLI migrate commands as if they exist | Not in v1.1.0; note the gap or implement locally in the app |
+| Adding `Group`, `Param`, JSON helpers, ORM, or CLI migrate commands as if they exist | Not in v1.1.1; note the gap or implement locally in the app |
 | Assuming MySQL DDL rolls back with `BeginTx` | MySQL auto-commits DDL; keep migrations small |
 | Manual `defer db.Close()` alongside `k.Run` | `Run` closes attached drivers on shutdown; registry needs its own `Close` if you keep one |
 | Adding fields to `Kernel` config via new `New` parameters | Add a functional `Option` (`WithX`) instead |
