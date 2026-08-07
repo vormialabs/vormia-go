@@ -1,5 +1,31 @@
 # Release Notes
 
+## v1.1.0 — Connection Registry + Migration Engine (2026-08-07)
+
+Vormia Go **v1.1.0** adds two engine-agnostic packages on top of the Slice 1 kernel: a named connection registry and a SQL migration engine. Both sit on `contract.Database` and import no concrete drivers.
+
+### What this release does
+
+**Connection registry (`db`).** Resolve connections from the config convention in vormia-go-core (`DB_*` for `default`, `DB_<NAME>_*` for named connections). The app registers one `Opener` per driver it imports; the registry looks up the opener by `DRIVER` and caches live connections. The framework still never imports `driver-postgresql`, `driver-mysql`, or `driver-sqlite`.
+
+**Migration engine (`migrate`).** Apply and roll back `<version>.up.sql` / `<version>.down.sql` files from any `fs.FS`. Tracks applied versions in a portable `schema_migrations` table. Supports `Up`, `Rollback` (by batch or step count), `Reset`, and `Version`. Placeholder style goes through the driver's `Rebind`.
+
+**Dependency.** Production code in `db` depends on `vormia-go-core/config` (`GetString`, `Prefixed`). Drivers remain test-only dependencies (SQLite in-memory).
+
+### Install
+
+```bash
+go get github.com/vormialabs/vormia-go@v1.1.0
+```
+
+Requires Go 1.26+.
+
+### What's not in this release
+
+CLI `migrate*` / `db:*` commands and starterkit opener wiring land in the next step. ORM, validation, auth, and HTTP ergonomics remain later work.
+
+---
+
 ## v1.0.1 — Official Slice 1 Release (2026-08-04)
 
 Vormia Go **v1.0.1** is the official Slice 1 release. It delivers the framework's spine: you can boot an application, wire in your chosen drivers, register routes and middleware, serve HTTP, and shut down gracefully — all without the framework ever depending on a concrete router, database, or cache implementation.
