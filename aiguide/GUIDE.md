@@ -1,30 +1,31 @@
 # How vormia-go Works
 
-A walkthrough of the framework's design, the two packages that make it up, and the lifecycle of an app built on it. Read the [README](../README.md) first for install and quick-start; this guide explains the *why* and *how* underneath.
+A walkthrough of the framework's design, the packages that make it up, and the lifecycle of an app built on it. Read the [README](../README.md) first for install and quick-start; this guide explains the *why* and *how* underneath. Release history: [RELEASE_NOTES.md](../RELEASE_NOTES.md).
 
-**Version:** v1.0.0 (Slice 1 — kernel + contracts)
+**Version:** v1.1.0 — kernel + contracts, connection registry (`db`), migration engine (`migrate`)
 
 ---
 
 ## 1. The Big Idea
 
-vormia-go is a **Laravel-inspired application spine for Go**. Like Laravel, it gives you a kernel that boots the app, wires services (database, cache, router), registers routes, serves HTTP, and shuts down gracefully.
+vormia-go is a **Laravel-inspired application spine for Go**. Like Laravel, it gives you a kernel that boots the app, wires services (database, cache, router), registers routes, serves HTTP, and shuts down gracefully. From v1.1.0 it also resolves **named database connections** and runs **SQL migrations** — still without importing any concrete driver.
 
-Unlike Laravel, it does **not** ship any concrete implementations. The framework only knows about *interfaces*. Your application chooses the concrete drivers (chi, PostgreSQL, Redis, ...) and hands them to the kernel.
+Unlike Laravel, it does **not** ship any concrete implementations. The framework only knows about *interfaces* (and config keys). Your application chooses the concrete drivers (chi, PostgreSQL, Redis, ...) and either hands them to the kernel or registers **openers** so the registry can open them on demand.
 
 This is the whole dependency picture:
 
 ```
 your app  ──imports──▶  driver-chi, driver-postgresql, ...   (concretes YOU chose)
 your app  ──imports──▶  vormia-go                             (the framework)
-vormia-go ──imports──▶  contract                              (interfaces only)
+vormia-go ──imports──▶  contract + vormia-go-core/config     (never a concrete driver)
 driver-*  ──imports──▶  nothing from vormia-go                (structural satisfaction)
 ```
 
-Two properties fall out of this:
+Three properties fall out of this:
 
-1. **Swappability** — change `postgres.Open(...)` to `sqlite.Open(...)` in `main()` and nothing else in your codebase changes, because everything downstream only sees `contract.Database`.
-2. **No import cycles, no coupling** — drivers never import the framework. They just happen to have the right method sets. This works because Go interfaces are satisfied *structurally* (see [Structural typing](#5-the-go-concepts-that-make-this-work) below).
+1. **Swappability** — change `postgres.Open(...)` to `sqlite.Open(...)` in `main()` (or swap which opener you register) and nothing else in your codebase changes, because everything downstream only sees `contract.Database`.
+2. **No import cycles, no coupling** — drivers never import the framework. They just happen to have the right method sets. This works because Go interfaces are satisfied *structurally* (see [Structural typing](#7-the-go-concepts-that-make-this-work) below).
+3. **Open on demand without framework driver imports** — `db.Registry` never imports postgres/mysql/sqlite. The *app* registers an `Opener` closure that already closed over the driver the app imported. Same idea as `database/sql` driver registration.
 
 ---
 
@@ -58,7 +59,7 @@ The portable surface of a SQL database:
 | `Close` | Release the connection pool |
 | `Rebind(query) string` | Translate `?` placeholders to the driver's style (e.g. `$1` for Postgres) |
 
-Design note: a driver gets everything except `Rebind` **for free** by embedding `*sql.DB`. `Rebind` exists because placeholder syntax is the one thing `database/sql` does not abstract — SQLite/MySQL use `?`, PostgreSQL uses `$1, $2, ...`. Write queries with `?` and pass them through `Rebind` and they run on any driver.
+Design note: a driver gets everything except `Rebind` **for free** by embedding `*sql.DB`. `Rebind` exists because placeholder syntax is the one thing `database/sql` does not abstract — SQLite/MySQL use `?`, PostgreSQL uses `$1, $2, ...`. Write queries with `?` and pass them through `Rebind` and they run on any driver. The migration engine relies on this for tracking-table inserts.
 
 ### `Cache`
 
@@ -145,6 +146,7 @@ func (k *Kernel) Run(addr string) error {
 main()
   │
   ├─ open drivers          postgres.Open(...), redis.Open(...)
+  │     — or —             reg.RegisterOpener(...); reg.Connection("")
   ├─ app.New(router, ...)  build the kernel, attach drivers
   ├─ k.Use(...)            global middleware (optional, before routes)
   ├─ k.Routes(...)         register handlers; capture k to reach k.DB / k.Cache
@@ -171,7 +173,104 @@ Note `req.Context()` being passed to the query — if the client disconnects, th
 
 ---
 
-## 4. How Drivers Fit (and How to Write One)
+## 4. Package: `db` — Named Connection Registry
+
+File: [`db/registry.go`](../db/registry.go). Depends on `contract` + `vormia-go-core/config`. Imports **no** driver.
+
+### Why openers exist
+
+A registry that opens connections seems to need drivers — but if vormia-go imported every driver, every app would compile them all in. Instead the framework defines:
+
+```go
+type Opener func(ConnConfig) (contract.Database, error)
+```
+
+The **app** — which already imports the drivers it chose — registers one opener per driver name (`"sqlite"`, `"postgres"`, `"mysql"`). When config says `DB_DRIVER=postgres`, the registry looks up the `"postgres"` opener and calls it. Dependency direction preserved; connections open on demand.
+
+### Config convention
+
+| Connection name | Keys read |
+|-----------------|-----------|
+| `default` | Bare `DB_*` (`DB_DRIVER`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE`, `DB_PATH`) |
+| Any other name `X` | `DB_<UPPER(X)>_*` via `cfg.Prefixed("DB_X_")` |
+| Default name when empty | `DB_CONNECTION` (fallback `"default"`) |
+
+Example env for a second MySQL connection named `mysql2`:
+
+```
+DB_CONNECTION=default
+DB_DRIVER=sqlite
+DB_PATH=./app.db
+
+DB_MYSQL2_DRIVER=mysql
+DB_MYSQL2_HOST=127.0.0.1
+DB_MYSQL2_PORT=3306
+DB_MYSQL2_USER=app
+DB_MYSQL2_PASSWORD=secret
+DB_MYSQL2_NAME=appdb
+```
+
+### API
+
+| Method | Purpose |
+|--------|---------|
+| `New(cfg)` | Bind registry to a `*config.Config` |
+| `RegisterOpener(driver, opener)` | App wires driver name → opener |
+| `Default()` | Name from `DB_CONNECTION` |
+| `Resolve(name)` | Build `ConnConfig` without opening |
+| `Connection(name)` | Resolve + open once (mutex-cached) |
+| `Close()` | Close every live connection |
+
+```go
+reg := db.New(cfg)
+reg.RegisterOpener("sqlite", func(c db.ConnConfig) (contract.Database, error) {
+	return sqlite.Open(sqlite.Config{Path: c.Path})
+})
+defaultDB, err := reg.Connection("")
+// later: secondary, err := reg.Connection("mysql2")
+```
+
+Errors are intentional and specific: unknown connection group, missing `DRIVER`, or no opener registered for that driver — each message tells you what to fix. That matters when a future CLI runs `vormia migrate --database=typo`.
+
+---
+
+## 5. Package: `migrate` — SQL Migration Engine
+
+File: [`migrate/migrate.go`](../migrate/migrate.go). Depends only on `contract` + stdlib. Engine-agnostic: one code path for SQLite, PostgreSQL, and MySQL.
+
+### How it works
+
+- Source is an `fs.FS` of `<version>.up.sql` / `<version>.down.sql` files (timestamp-prefixed names sort into apply order).
+- Tracking table `schema_migrations` (`version`, `batch`, `applied_at`) uses portable DDL all three engines accept.
+- Each up/down runs in a transaction; tracking inserts/deletes use `?` + `Rebind`.
+- Table name is a fixed constant (safe to concatenate); values are always parameterized.
+
+```go
+m := migrate.New(database, os.DirFS("database/migrations"))
+run, err := m.Up(ctx)              // pending → one new batch
+rolled, err := m.Rollback(ctx, 0)  // latest batch
+ver, err := m.Version(ctx)         // latest applied, or ""
+```
+
+| Method | Purpose |
+|--------|---------|
+| `New(db, src)` | Build migrator |
+| `Up(ctx)` | Apply pending migrations in one new batch |
+| `Rollback(ctx, steps)` | `steps <= 0` = last batch; else N newest |
+| `Reset(ctx)` | Roll everything back, newest first |
+| `Version(ctx)` | Latest applied version |
+
+### Honest cross-engine gotchas
+
+1. **MySQL DDL is not transactional** — a failed multi-statement MySQL migration can leave partial schema; keep MySQL migrations small.
+2. **Multi-statement MySQL** needs `multiStatements=true` on the DSN (or one statement per file). A statement splitter is a future enhancement.
+3. **Your app migrations** may use engine-specific SQL if you are not switching engines; the tracking table stays in the portable subset.
+
+Laravel translation: this is the Go equivalent of `php artisan migrate` / `migrate:rollback`, but as a library API today — CLI thin front-ends come next.
+
+---
+
+## 6. How Drivers Fit (and How to Write One)
 
 A driver is an external module that structurally satisfies one contract interface. It never imports vormia-go. The shape, using the sqlite driver as the model:
 
@@ -202,11 +301,11 @@ To write a new driver (say, a memory cache): create a new module, implement the 
 
 ### Why does `go.mod` list chi and sqlite if the framework never imports drivers?
 
-They are **test-only dependencies**. `app/kernel_test.go` is an end-to-end test that boots the kernel with the real chi router and a real in-memory SQLite database, drives a request through `ServeHTTP` with `httptest` (no network, no Docker), and asserts the response came from the database. Production code under `app/` and `contract/` imports no driver — the constraint holds where it matters.
+They are **test-only dependencies**. `app/kernel_test.go`, `db/registry_test.go`, and `migrate/migrate_test.go` boot real chi/sqlite (in-memory) so the suite needs no Docker. Production packages `contract`, `app`, `db`, and `migrate` never import a `vormia-go-driver-*` module — verify with `go list -deps ./db ./migrate`.
 
 ---
 
-## 5. The Go Concepts That Make This Work
+## 7. The Go Concepts That Make This Work
 
 If you're coming from PHP/Laravel, these are the language features doing the heavy lifting — with the official docs for each:
 
@@ -220,6 +319,7 @@ If you're coming from PHP/Laravel, these are the language features doing the hea
 | **`os/signal`** | Turning SIGINT/SIGTERM into a channel receive | [pkg.go.dev/os/signal](https://pkg.go.dev/os/signal) |
 | **`net/http` + `http.Handler`** | The universal HTTP currency — middleware is `func(http.Handler) http.Handler`, and `ServeHTTP` makes the router testable in-process | [pkg.go.dev/net/http](https://pkg.go.dev/net/http) |
 | **`database/sql`** | The stdlib DB abstraction the `Database` contract is shaped around | [Go: accessing databases](https://go.dev/doc/database/) |
+| **`io/fs` / `fstest.MapFS`** | Migration source is any filesystem — real dirs in apps, in-memory maps in tests | [pkg.go.dev/io/fs](https://pkg.go.dev/io/fs) |
 | **`httptest`** | In-process request/response testing without a network listener | [pkg.go.dev/net/http/httptest](https://pkg.go.dev/net/http/httptest) |
 
 Laravel translation table, roughly:
@@ -228,6 +328,9 @@ Laravel translation table, roughly:
 |---------|-----------|
 | `App\Http\Kernel` + `bootstrap/app.php` | `app.Kernel` + `app.New(...)` |
 | Service container binding an interface to a concrete | You pass the concrete into `New` / `WithDB` as an interface value |
+| `config/database.php` connections | `db.Registry` + `DB_*` / `DB_<NAME>_*` config |
+| `DB::connection('mysql2')` | `reg.Connection("mysql2")` |
+| `php artisan migrate` / `migrate:rollback` | `migrate.Migrator` `Up` / `Rollback` (CLI next) |
 | `routes/web.php` | The `k.Routes(func(r contract.Router) { ... })` callback |
 | Global middleware in `Kernel::$middleware` | `k.Use(...)` |
 | `php artisan serve` / FPM lifecycle | `k.Run(":8080")` with built-in graceful shutdown |
@@ -236,23 +339,23 @@ Laravel translation table, roughly:
 
 ---
 
-## 6. Current Scope and What's Next
+## 8. Current Scope and What's Next
 
-This is **Slice 1**: the spine only. What exists today is the kernel, the three contracts, five external drivers, and the end-to-end test proving they compose.
+**v1.1.0** includes: kernel, three contracts, five external drivers, named connection registry, and migration engine — plus tests proving they compose without Docker.
 
-Not here yet (per the roadmap):
+Not here yet:
 
-- **Slice 2** — HTTP ergonomics: JSON/error response helpers, request context helpers, a router-agnostic `Param` for URL parameters
-- **Slice 3+** — ORM/query builder, validation, auth, CLI scaffolding, DI container integration
+- **Next** — CLI `migrate*` / `db:*` commands and `--database` flag (thin front-ends over `db` + `migrate`)
+- **Later** — HTTP ergonomics (JSON helpers, router-agnostic `Param`), ORM/query builder, validation, auth, DI container integration
 
-Until then you work close to the stdlib: raw SQL through `k.DB`, manual `w.Write` / `http.Error` in handlers, and driver-specific route parameter extraction.
+Until then you work close to the stdlib: raw SQL through `k.DB`, manual `w.Write` / `http.Error` in handlers, and driver-specific route parameter extraction when you need URL params.
 
 ---
 
-## 7. Running the Tests
+## 9. Running the Tests
 
 ```bash
 go test -v ./...
 ```
 
-The suite needs no external services — chi is pure Go and the sqlite driver (`modernc.org/sqlite`) is a CGo-free port, so an in-memory database runs anywhere Go runs.
+The suite needs no external services — chi is pure Go and the sqlite driver (`modernc.org/sqlite`) is a CGo-free port, so an in-memory database runs anywhere Go runs. Migrations are tested with `fstest.MapFS`.

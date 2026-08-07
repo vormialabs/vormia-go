@@ -2,7 +2,9 @@
 
 Vormia Go — a modular, Laravel-inspired application framework for Go that wires swappable router, database, and cache drivers behind stable contracts.
 
-**Version:** v1.1.0 — connection registry + migration engine on top of the Slice 1 kernel. ORM, validation, auth, and CLI scaffolding come in later slices.
+**Version:** v1.1.0 — kernel + contracts, named connection registry (`db`), and SQL migration engine (`migrate`). ORM, validation, auth, and CLI scaffolding come in later slices.
+
+Human walkthrough: [aiguide/GUIDE.md](aiguide/GUIDE.md). AI editor rules: [aiguide/CURSOR_CODEX_MCP_GUIDE.md](aiguide/CURSOR_CODEX_MCP_GUIDE.md). Changelog: [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## Install
 
@@ -10,7 +12,7 @@ Vormia Go — a modular, Laravel-inspired application framework for Go that wire
 go get github.com/vormialabs/vormia-go@v1.1.0
 ```
 
-Requires Go 1.26+.
+Requires Go 1.26+. Named connections use [`vormia-go-core/config`](https://github.com/vormialabs/vormia-go-core) (`GetString`, `Prefixed`).
 
 ## Quick start
 
@@ -53,13 +55,13 @@ Swap `postgres` for `mysql` or `sqlite` and nothing else changes.
 ```
 app  ──imports──▶ driver-chi, driver-postgresql   (the concretes you chose)
 app  ──imports──▶ vormia-go                         (the framework)
-vormia-go ──imports──▶ contract                     (never a concrete driver)
+vormia-go ──imports──▶ contract + core/config       (never a concrete driver)
 driver-* ──imports──▶ (nothing from vormia-go)      (structural satisfaction)
 ```
 
 Drivers satisfy the canonical interfaces without importing the framework. Your app imports both the framework and whichever drivers it needs, then passes them to the kernel as interface values.
 
-Named connections use the same rule: the app registers an **opener** per driver it imported; `db.Registry` looks up the opener from config (`DB_DRIVER` / `DB_<NAME>_DRIVER`) and never imports a driver itself.
+Named connections keep the same rule: the app registers an **opener** per driver it imported; `db.Registry` looks up the opener from config (`DB_DRIVER` / `DB_<NAME>_DRIVER`) and never imports a driver itself.
 
 ## Packages
 
@@ -81,7 +83,15 @@ Named connections use the same rule: the app registers an **opener** per driver 
 
 ### Connection registry (`db`)
 
-Resolve named connections from the config convention locked in vormia-go-core (`DB_*` for `default`, `DB_<NAME>_*` for others). The app registers one opener per driver:
+Config convention (owned by vormia-go, resolved via core `Prefixed`):
+
+| Connection | Keys |
+|------------|------|
+| `default` | Bare `DB_*` (`DB_DRIVER`, `DB_HOST`, `DB_PATH`, …) |
+| Named (e.g. `mysql2`) | `DB_MYSQL2_*` (`DB_MYSQL2_DRIVER`, `DB_MYSQL2_HOST`, …) |
+| Which name is default | `DB_CONNECTION` (fallback `"default"`) |
+
+The app registers one opener per driver:
 
 ```go
 reg := db.New(cfg)
@@ -98,6 +108,7 @@ reg.RegisterOpener("postgres", func(c db.ConnConfig) (contract.Database, error) 
 })
 
 defaultDB, _ := reg.Connection("") // uses DB_CONNECTION, or "default"
+k := app.New(chi.New(), app.WithDB(defaultDB))
 ```
 
 | Method | Purpose |
@@ -111,13 +122,19 @@ defaultDB, _ := reg.Connection("") // uses DB_CONNECTION, or "default"
 
 ### Migrations (`migrate`)
 
-Apply and roll back SQL files against any `contract.Database`. Pass an `fs.FS` (e.g. `os.DirFS("database/migrations")` or `fstest.MapFS` in tests).
+Apply and roll back SQL files against any `contract.Database`. Pass an `fs.FS` (e.g. `os.DirFS("database/migrations")` or `fstest.MapFS` in tests). Files are named `<version>.up.sql` / `<version>.down.sql`; applied versions live in `schema_migrations`.
+
+```go
+m := migrate.New(database, os.DirFS("database/migrations"))
+run, err := m.Up(ctx)           // pending migrations, one new batch
+rolled, err := m.Rollback(ctx, 0) // latest batch (steps <= 0); or N newest
+```
 
 | Method | Purpose |
 |--------|---------|
-| `New(db, src)` | Build a migrator; `src` holds `<version>.up.sql` / `<version>.down.sql` |
+| `New(db, src)` | Build a migrator |
 | `Up(ctx)` | Apply all pending migrations in one new batch |
-| `Rollback(ctx, steps)` | `steps <= 0` rolls back the latest batch; otherwise that many, newest first |
+| `Rollback(ctx, steps)` | `steps <= 0` = latest batch; otherwise that many, newest first |
 | `Reset(ctx)` | Roll back everything |
 | `Version(ctx)` | Latest applied version, or `""` |
 

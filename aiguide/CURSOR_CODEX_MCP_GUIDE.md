@@ -1,16 +1,19 @@
 # vormia-go — AI Code Editor Guide
 
-Instructions for AI coding assistants (Cursor, Codex, Copilot, MCP-based agents) working **with** or **on** the vormia-go package. Treat this file as authoritative context. Human-oriented explanations live in [GUIDE.md](GUIDE.md); architecture rationale in the [README](../README.md).
+Instructions for AI coding assistants (Cursor, Codex, Copilot, MCP-based agents) working **with** or **on** the vormia-go package. Treat this file as authoritative context. Human-oriented explanations live in [GUIDE.md](GUIDE.md); architecture rationale in the [README](../README.md); releases in [RELEASE_NOTES.md](../RELEASE_NOTES.md).
 
 ---
 
 ## 1. Package Facts (memorize these)
 
-- **Module:** `github.com/vormialabs/vormia-go` — **v1.0.0**, requires **Go 1.26+**
-- **Status:** Slice 1 — kernel + contracts only. No ORM, no validation, no auth, no CLI, no JSON helpers, no router-agnostic `Param`. Do not pretend these exist.
-- **Two production packages, one file each:**
-  - `contract` (`contract/contract.go`) — `Router`, `Database`, `Cache` interfaces. Stdlib imports only.
+- **Module:** `github.com/vormialabs/vormia-go` — **v1.1.0**, requires **Go 1.26+**
+- **Status:** Kernel + contracts + connection registry (`db`) + migration engine (`migrate`). No ORM, no validation, no auth, no CLI commands, no JSON helpers, no router-agnostic `Param`. Do not pretend those exist.
+- **Production packages:**
+  - `contract` (`contract/contract.go`) — `Router`, `Database`, `Cache`. Stdlib imports only.
   - `app` (`app/kernel.go`) — `Kernel`, `New`, `WithDB`, `WithCache`, `Use`, `Routes`, `Run`.
+  - `db` (`db/registry.go`) — `ConnConfig`, `Opener`, `Registry` (`New`, `RegisterOpener`, `Default`, `Resolve`, `Connection`, `Close`). Imports `contract` + `vormia-go-core/config` only.
+  - `migrate` (`migrate/migrate.go`) — `Migrator` (`New`, `Up`, `Rollback`, `Reset`, `Version`). Imports `contract` + stdlib only (`fs`, `context`, …).
+- **Core dependency:** `github.com/vormialabs/vormia-go-core@v1.1.0` for `config` (`GetString`, `Prefixed`). Core stays DB-agnostic; **vormia-go owns** the `DB_*` / `DB_<NAME>_*` connection naming rules.
 - **Official drivers** (separate modules, chosen by the application, never by the framework):
 
 | Import | Satisfies | Constructor |
@@ -24,14 +27,16 @@ Instructions for AI coding assistants (Cursor, Codex, Copilot, MCP-based agents)
 ## 2. Architectural Invariants (never violate)
 
 1. **`contract` imports only the Go standard library.** Never add a third-party import to `contract/contract.go`.
-2. **Framework production code (`app`, `contract`) never imports a concrete driver.** Drivers appear only in `_test.go` files and in end-user applications.
+2. **Framework production code (`app`, `contract`, `db`, `migrate`) never imports a concrete driver.** Drivers appear only in `_test.go` files and in end-user applications. Verify with `go list -deps ./db ./migrate` (must not list `vormia-go-driver-*`).
 3. **Drivers never import vormia-go.** They satisfy contracts structurally. When writing a driver, do not add `vormia-go` to its `go.mod`.
-4. **Contract changes are breaking changes** for every driver. Do not add, remove, or re-sign a contract method casually — flag it to the user first.
-5. Router grouping (`Group`/`Route`) is deliberately **not** in `contract.Router`. Do not add it; it cannot be expressed portably.
+4. **Open connections via app-registered `db.Opener`s**, not by importing drivers inside `db`. The app's closure calls `sqlite.Open` / `postgres.Open` / `mysql.Open`.
+5. **Contract changes are breaking changes** for every driver. Do not add, remove, or re-sign a contract method casually — flag it to the user first.
+6. Router grouping (`Group`/`Route`) is deliberately **not** in `contract.Router`. Do not add it; it cannot be expressed portably.
+7. **Do not move `DB_<NAME>_*` connection semantics into vormia-go-core.** Core only provides generic `Prefixed`; this module owns the registry rules.
 
 ## 3. Canonical Usage Patterns
 
-### Bootstrap an application
+### Bootstrap an application (direct open)
 
 ```go
 package main
@@ -69,6 +74,46 @@ func main() {
 ```
 
 Ordering is fixed: **open drivers → `New` → `Use` → `Routes` → `Run`.** `Run` blocks until SIGINT/SIGTERM, then shuts down gracefully (10s budget) and closes DB/Cache. Do not add manual signal handling or `defer db.Close()` in `main` — `Run` owns the shutdown.
+
+### Bootstrap with the connection registry
+
+```go
+reg := db.New(cfg)
+reg.RegisterOpener("sqlite", func(c db.ConnConfig) (contract.Database, error) {
+	return sqlite.Open(sqlite.Config{Path: c.Path})
+})
+reg.RegisterOpener("postgres", func(c db.ConnConfig) (contract.Database, error) {
+	port, _ := strconv.Atoi(c.Port)
+	return postgres.Open(postgres.Config{
+		Host: c.Host, Port: port, User: c.User,
+		Password: c.Password, Database: c.Database, SSLMode: c.SSLMode,
+	})
+})
+
+defaultDB, err := reg.Connection("") // DB_CONNECTION or "default"
+if err != nil { /* handle */ }
+k := app.New(chi.New(), app.WithDB(defaultDB))
+// secondary, err := reg.Connection("mysql2")
+```
+
+Config keys:
+
+| Connection | Keys |
+|---|---|
+| `default` | Bare `DB_*` |
+| Named `X` | `DB_<UPPER(X)>_*` via `cfg.Prefixed` |
+| Default name | `DB_CONNECTION` (fallback `"default"`) |
+
+### Run migrations
+
+```go
+m := migrate.New(database, os.DirFS("database/migrations"))
+run, err := m.Up(ctx)
+rolled, err := m.Rollback(ctx, 0) // latest batch; use steps > 0 for N newest
+ver, err := m.Version(ctx)
+```
+
+Files: `<version>.up.sql` / `<version>.down.sql`. Tracking table: `schema_migrations`. Prefer one statement per file for MySQL (DDL is not transactional; multi-statement needs DSN `multiStatements=true`).
 
 ### Database access from a handler
 
@@ -127,11 +172,11 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 Register with `k.Use(loggingMiddleware)` **before** `k.Routes(...)` — chi panics if middleware is added after routes.
 
-### URL parameters (Slice 1 caveat)
+### URL parameters (not portable yet)
 
-There is **no portable `Param` yet** (planned for Slice 2). If the app needs route parameters, use the concrete router's mechanism in the handler (e.g. `chi.URLParam(req, "id")` via `github.com/go-chi/chi/v5`) and note that this couples the handler to chi. Prefer query strings (`req.URL.Query().Get("id")`) when portability matters.
+There is **no portable `Param` yet**. If the app needs route parameters, use the concrete router's mechanism in the handler (e.g. `chi.URLParam(req, "id")` via `github.com/go-chi/chi/v5`) and note that this couples the handler to chi. Prefer query strings (`req.URL.Query().Get("id")`) when portability matters.
 
-### JSON responses (Slice 1 caveat)
+### JSON responses (no helpers yet)
 
 No helpers yet. Write them manually:
 
@@ -159,13 +204,18 @@ k.Router.ServeHTTP(rr, req)
 
 Do **not** call `k.Run` in tests — it blocks on OS signals.
 
-### Real database in tests
-
-Use the sqlite driver with an in-memory DB — it is CGo-free (`modernc.org/sqlite`) and runs anywhere:
+### Real database / migrations in tests
 
 ```go
 db, err := sqlite.Open(sqlite.Config{Path: ":memory:"})
+src := fstest.MapFS{
+	"20260101_create_users.up.sql":   {Data: []byte(`CREATE TABLE users (...)`)},
+	"20260101_create_users.down.sql": {Data: []byte(`DROP TABLE users`)},
+}
+m := migrate.New(db, src)
 ```
+
+Use the sqlite driver with an in-memory DB — it is CGo-free (`modernc.org/sqlite`) and runs anywhere.
 
 ### Pin interface satisfaction at compile time
 
@@ -195,20 +245,23 @@ A driver is a **separate Go module** that structurally satisfies exactly one con
 
 | Mistake | Correct behavior |
 |---|---|
-| Importing a driver inside `app/` or `contract/` production code | Drivers only in `_test.go` and user applications |
+| Importing a driver inside `app/`, `contract/`, `db/`, or `migrate/` production code | Drivers only in `_test.go` and user applications |
+| Opening DBs inside `db` by importing postgres/mysql/sqlite | App registers `Opener` closures; registry only looks them up |
+| Putting `DB_<NAME>_*` rules into vormia-go-core | Core stays generic (`Prefixed`); registry owns the convention |
 | Calling `k.Use(...)` after `k.Routes(...)` | Middleware first; chi panics otherwise |
 | Treating a cache miss as an error | Check `Get`'s `bool`, not `err` |
 | Writing `$1` placeholders directly | Write `?` and pass through `k.DB.Rebind(...)` |
 | Passing `context.Background()` in handlers | Pass `req.Context()` so client disconnects cancel work |
 | Calling `k.Run` in unit tests | Use `k.Router.ServeHTTP` with `httptest` |
-| Adding `Group`, `Param`, JSON helpers, or ORM calls as if they exist | Slice 1 has none of these; note the gap or implement locally |
-| Manual `defer db.Close()` alongside `k.Run` | `Run` closes attached drivers on shutdown |
+| Adding `Group`, `Param`, JSON helpers, ORM, or CLI migrate commands as if they exist | Not in v1.1.0; note the gap or implement locally in the app |
+| Assuming MySQL DDL rolls back with `BeginTx` | MySQL auto-commits DDL; keep migrations small |
+| Manual `defer db.Close()` alongside `k.Run` | `Run` closes attached drivers on shutdown; registry needs its own `Close` if you keep one |
 | Adding fields to `Kernel` config via new `New` parameters | Add a functional `Option` (`WithX`) instead |
 
 ## 7. Repository Conventions (when editing vormia-go itself)
 
-- Keep each package to its single file until size genuinely demands a split (`contract/contract.go`, `app/kernel.go`).
+- Keep packages focused: `contract` and `app` are still one file each; `db` and `migrate` follow the same style until size demands a split.
 - Every exported identifier gets a doc comment; comments explain intent and trade-offs, not mechanics.
-- Tests live in external test packages (`package app_test`) and exercise real drivers end-to-end rather than mocks.
+- Tests live in external test packages (`package db_test`, `package migrate_test`, `package app_test`) and exercise real drivers end-to-end rather than mocks.
 - New optional kernel dependencies follow the existing pattern: field on `Kernel` (interface type, `// may be nil` comment), a `WithX` option, and closing in `closeDrivers` if it has a `Close`.
-- Anything that would expand the contracts or add a framework dependency is an architectural decision — surface it to the user before implementing.
+- Anything that would expand the contracts, import a driver in production code, or add a framework dependency is an architectural decision — surface it to the user before implementing.
