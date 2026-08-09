@@ -6,19 +6,21 @@ Instructions for AI coding assistants (Cursor, Codex, Copilot, MCP-based agents)
 
 ## 1. Package Facts (memorize these)
 
-- **Module:** `github.com/vormialabs/vormia-go` — **v1.1.3**, requires **Go 1.26+**
-- **Status:** Kernel + contracts + connection registry (`db`) + migration engine (`migrate`, including `Status`). No ORM, no validation, no auth, no CLI commands, no JSON helpers, no router-agnostic `Param`. Do not pretend those exist.
+- **Module:** `github.com/vormialabs/vormia-go` — **v1.2.0**, requires **Go 1.26+**
+- **Status:** Kernel + contracts (incl. `Router.Routes()`) + `db` (registry + `Wipe`) + `migrate` + `seed` + `cache` registry. No ORM, no validation, no auth, no CLI commands, no `Cache.Flush`, no JSON helpers, no router-agnostic `Param`. Do not pretend those exist. Pair chi driver **v1.1.0+** for `Routes()`.
 - **Production packages:**
-  - `contract` (`contract/contract.go`) — `Router`, `Database`, `Cache`. Stdlib imports only.
+  - `contract` (`contract/contract.go`) — `Router` (incl. `Routes()` / `RouteInfo`), `Database`, `Cache`. Stdlib imports only.
   - `app` (`app/kernel.go`) — `Kernel`, `New`, `WithDB`, `WithCache`, `Use`, `Routes`, `Run`.
-  - `db` (`db/registry.go`) — `ConnConfig`, `Opener`, `Registry` (`New`, `RegisterOpener`, `Default`, `Resolve`, `Connection`, `Close`). Imports `contract` + `vormia-go-core/config` only.
-  - `migrate` (`migrate/migrate.go`) — `Migrator` (`New`, `Up`, `Rollback`, `Reset`, `Version`, `Status`), `StatusRow`. Imports `contract` + stdlib only (`fs`, `context`, …).
-- **Core dependency:** `github.com/vormialabs/vormia-go-core@v1.1.0` for `config` (`GetString`, `Prefixed`). Core stays DB-agnostic; **vormia-go owns** the `DB_*` / `DB_<NAME>_*` connection naming rules.
+  - `db` (`db/registry.go`, `db/wipe.go`) — `ConnConfig`, `Opener`, `Registry`, `Wipe`. Imports `contract` + `vormia-go-core/config` only.
+  - `migrate` (`migrate/migrate.go`) — `Migrator` (`New`, `Up`, `Rollback`, `Reset`, `Version`, `Status`), `StatusRow`. Imports `contract` + stdlib only.
+  - `seed` (`seed/seed.go`) — `Run(ctx, conn, src)`. Imports `contract` + stdlib only.
+  - `cache` (`cache/registry.go`) — `ConnConfig`, `Opener`, `Registry` (`New`, `RegisterOpener`, `Default`, `Resolve`, `Connection`, `Close`). Imports `contract` + `vormia-go-core/config` only.
+- **Core dependency:** `github.com/vormialabs/vormia-go-core@v1.1.0` for `config` (`GetString`, `Prefixed`). Core stays DB-agnostic; **vormia-go owns** the `DB_*` / `DB_<NAME>_*` and `CACHE_*` / `CACHE_<NAME>_*` naming rules.
 - **Official drivers** (separate modules, chosen by the application, never by the framework):
 
 | Import | Satisfies | Constructor |
 |---|---|---|
-| `github.com/vormialabs/vormia-go-driver-chi` | `contract.Router` | `chi.New()` |
+| `github.com/vormialabs/vormia-go-driver-chi` **v1.1.0+** | `contract.Router` | `chi.New()` |
 | `github.com/vormialabs/vormia-go-driver-sqlite` | `contract.Database` | `sqlite.Open(sqlite.Config{Path: ...})` |
 | `github.com/vormialabs/vormia-go-driver-postgresql` | `contract.Database` | `postgres.Open(postgres.Config{Host, User, Database, ...})` |
 | `github.com/vormialabs/vormia-go-driver-mysql` | `contract.Database` | `mysql.Open(mysql.Config{...})` |
@@ -27,12 +29,12 @@ Instructions for AI coding assistants (Cursor, Codex, Copilot, MCP-based agents)
 ## 2. Architectural Invariants (never violate)
 
 1. **`contract` imports only the Go standard library.** Never add a third-party import to `contract/contract.go`.
-2. **Framework production code (`app`, `contract`, `db`, `migrate`) never imports a concrete driver.** Drivers appear only in `_test.go` files and in end-user applications. Verify with `go list -deps ./db ./migrate` (must not list `vormia-go-driver-*`).
-3. **Drivers never import vormia-go.** They satisfy contracts structurally. When writing a driver, do not add `vormia-go` to its `go.mod`.
-4. **Open connections via app-registered `db.Opener`s**, not by importing drivers inside `db`. The app's closure calls `sqlite.Open` / `postgres.Open` / `mysql.Open`.
-5. **Contract changes are breaking changes** for every driver. Do not add, remove, or re-sign a contract method casually — flag it to the user first.
+2. **Framework production code (`app`, `contract`, `db`, `migrate`, `seed`, `cache`) never imports a concrete driver.** Drivers appear only in `_test.go` files and in end-user applications. Verify with `go list -deps ./db ./migrate ./seed ./cache` (must not list `vormia-go-driver-*`).
+3. **Drivers never import vormia-go.** They satisfy contracts structurally. `RouteInfo` is a type alias so chi can implement `Routes()` without importing this module. When writing a driver, do not add `vormia-go` to its `go.mod`.
+4. **Open connections via app-registered `db.Opener` / `cache.Opener`s**, not by importing drivers inside `db` or `cache`. The app's closure calls `sqlite.Open` / `postgres.Open` / `redis.Open`.
+5. **Contract changes are breaking changes** for every driver. Do not add, remove, or re-sign a contract method casually — flag it to the user first. (`Routes()` landed in v1.2.0; `Flush` is still absent.)
 6. Router grouping (`Group`/`Route`) is deliberately **not** in `contract.Router`. Do not add it; it cannot be expressed portably.
-7. **Do not move `DB_<NAME>_*` connection semantics into vormia-go-core.** Core only provides generic `Prefixed`; this module owns the registry rules.
+7. **Do not move `DB_<NAME>_*` or `CACHE_<NAME>_*` connection semantics into vormia-go-core.** Core only provides generic `Prefixed`; this module owns the registry rules.
 
 ## 3. Canonical Usage Patterns
 
@@ -246,23 +248,24 @@ A driver is a **separate Go module** that structurally satisfies exactly one con
 
 | Mistake | Correct behavior |
 |---|---|
-| Importing a driver inside `app/`, `contract/`, `db/`, or `migrate/` production code | Drivers only in `_test.go` and user applications |
-| Opening DBs inside `db` by importing postgres/mysql/sqlite | App registers `Opener` closures; registry only looks them up |
-| Putting `DB_<NAME>_*` rules into vormia-go-core | Core stays generic (`Prefixed`); registry owns the convention |
+| Importing a driver inside `app/`, `contract/`, `db/`, `migrate/`, `seed/`, or `cache/` production code | Drivers only in `_test.go` and user applications |
+| Opening DBs/caches inside registries by importing drivers | App registers `Opener` closures; registry only looks them up |
+| Putting `DB_<NAME>_*` / `CACHE_<NAME>_*` rules into vormia-go-core | Core stays generic (`Prefixed`); registries own the convention |
 | Calling `k.Use(...)` after `k.Routes(...)` | Middleware first; chi panics otherwise |
 | Treating a cache miss as an error | Check `Get`'s `bool`, not `err` |
 | Writing `$1` placeholders directly | Write `?` and pass through `k.DB.Rebind(...)` |
 | Passing `context.Background()` in handlers | Pass `req.Context()` so client disconnects cancel work |
 | Calling `k.Run` in unit tests | Use `k.Router.ServeHTTP` with `httptest` |
-| Adding `Group`, `Param`, JSON helpers, ORM, or CLI migrate commands as if they exist | Not in v1.1.3; note the gap or implement locally in the app |
-| Assuming MySQL DDL rolls back with `BeginTx` | MySQL auto-commits DDL; keep migrations small |
-| Manual `defer db.Close()` alongside `k.Run` | `Run` closes attached drivers on shutdown; registry needs its own `Close` if you keep one |
+| Inventing `Cache.Flush`, CLI Group C commands, ORM, or JSON helpers as if they exist | Flush / CLI wrappers not in v1.2.0; note the gap |
+| Assuming MySQL DDL / Wipe rolls back with `BeginTx` | MySQL auto-commits DDL; Wipe is non-atomic on MySQL |
+| Manual `defer db.Close()` alongside `k.Run` | `Run` closes attached drivers on shutdown; registries need their own `Close` if you keep one |
 | Adding fields to `Kernel` config via new `New` parameters | Add a functional `Option` (`WithX`) instead |
+| Using chi older than v1.1.0 with vormia-go v1.2.0 | Upgrade chi — `Routes()` is required on `contract.Router` |
 
 ## 7. Repository Conventions (when editing vormia-go itself)
 
-- Keep packages focused: `contract` and `app` are still one file each; `db` and `migrate` follow the same style until size demands a split.
+- Keep packages focused: `contract` and `app` are still one file each; `db`, `migrate`, `seed`, and `cache` follow the same style until size demands a split.
 - Every exported identifier gets a doc comment; comments explain intent and trade-offs, not mechanics.
-- Tests live in external test packages (`package db_test`, `package migrate_test`, `package app_test`) and exercise real drivers end-to-end rather than mocks.
+- Tests live in external test packages (`package db_test`, `package migrate_test`, `package seed_test`, `package cache_test`, `package app_test`) and exercise real drivers or stubs end-to-end rather than mocks.
 - New optional kernel dependencies follow the existing pattern: field on `Kernel` (interface type, `// may be nil` comment), a `WithX` option, and closing in `closeDrivers` if it has a `Close`.
 - Anything that would expand the contracts, import a driver in production code, or add a framework dependency is an architectural decision — surface it to the user before implementing.

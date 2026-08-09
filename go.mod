@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/vormialabs/vormia-go-core v1.1.0
-	github.com/vormialabs/vormia-go-driver-chi v1.0.0
+	github.com/vormialabs/vormia-go-driver-chi v1.1.0
 	github.com/vormialabs/vormia-go-driver-sqlite v1.0.0
 )
 

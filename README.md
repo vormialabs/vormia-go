@@ -2,14 +2,14 @@
 
 Vormia Go — a modular, Laravel-inspired application framework for Go that wires swappable router, database, and cache drivers behind stable contracts.
 
-**Version:** v1.1.3 — kernel + contracts, named connection registry (`db`), and SQL migration engine (`migrate`) including `Status`. ORM, validation, auth, and CLI scaffolding come in later slices.
+**Version:** v1.2.0 — kernel + contracts (including `Router.Routes()`), `db` registry + `Wipe`, `migrate`, SQL `seed`, and `cache` registry. Pair with [vormia-go-driver-chi](https://github.com/vormialabs/vormia-go-driver-chi) **v1.1.0+** for `Routes()`. ORM, validation, auth, and CLI wrappers come later.
 
 Human walkthrough: [aiguide/GUIDE.md](aiguide/GUIDE.md). AI editor rules: [aiguide/CURSOR_CODEX_MCP_GUIDE.md](aiguide/CURSOR_CODEX_MCP_GUIDE.md). Changelog: [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## Install
 
 ```bash
-go get github.com/vormialabs/vormia-go@v1.1.3
+go get github.com/vormialabs/vormia-go@v1.2.0
 ```
 
 Requires Go 1.26+. Named connections use [`vormia-go-core/config`](https://github.com/vormialabs/vormia-go-core) (`GetString`, `Prefixed`).
@@ -61,16 +61,18 @@ driver-* ──imports──▶ (nothing from vormia-go)      (structural satisf
 
 Drivers satisfy the canonical interfaces without importing the framework. Your app imports both the framework and whichever drivers it needs, then passes them to the kernel as interface values.
 
-Named connections keep the same rule: the app registers an **opener** per driver it imported; `db.Registry` looks up the opener from config (`DB_DRIVER` / `DB_<NAME>_DRIVER`) and never imports a driver itself.
+Named connections keep the same rule: the app registers an **opener** per driver it imported; `db.Registry` / `cache.Registry` look up the opener from config and never import a driver themselves.
 
 ## Packages
 
 | Package | Purpose |
 |---------|---------|
-| [`contract`](contract/contract.go) | Canonical `Router`, `Database`, and `Cache` interfaces (stdlib only) |
+| [`contract`](contract/contract.go) | Canonical `Router` (incl. `Routes()`), `Database`, and `Cache` interfaces (stdlib only) |
 | [`app`](app/kernel.go) | `Kernel` — wire drivers, register routes, serve, graceful shutdown |
-| [`db`](db/registry.go) | Named connection registry — resolve config, open via registered openers, cache live connections |
-| [`migrate`](migrate/migrate.go) | SQL migration engine against any `contract.Database` (`.up.sql` / `.down.sql`) |
+| [`db`](db/registry.go) | Named connection registry + [`Wipe`](db/wipe.go) |
+| [`migrate`](migrate/migrate.go) | SQL migration engine against any `contract.Database` |
+| [`seed`](seed/seed.go) | Run `*.sql` seeders from an `fs.FS` (no tracking table) |
+| [`cache`](cache/registry.go) | Named cache connection registry (`CACHE_*` / `CACHE_<NAME>_*`) |
 
 ### Kernel API
 
@@ -111,14 +113,17 @@ defaultDB, _ := reg.Connection("") // uses DB_CONNECTION, or "default"
 k := app.New(chi.New(), app.WithDB(defaultDB))
 ```
 
-| Method | Purpose |
-|--------|---------|
+| Method / func | Purpose |
+|---------------|---------|
 | `New(cfg)` | Bind a registry to a config source |
 | `RegisterOpener(driver, opener)` | Wire a driver name to an opener (app-owned) |
 | `Default()` | Connection name from `DB_CONNECTION` (fallback `"default"`) |
 | `Resolve(name)` | Build `ConnConfig` without opening |
 | `Connection(name)` | Resolve, open once (cached), return `contract.Database` |
 | `Close()` | Close every live connection |
+| `Wipe(ctx, conn, driver)` | Drop all user tables (dialect-specific; destructive) |
+
+`Wipe` needs the driver name because the `Database` contract hides the engine. MySQL wipes are **non-atomic** (FK checks toggled around drops).
 
 ### Migrations (`migrate`)
 
@@ -140,19 +145,43 @@ rows, err := m.Status(ctx)      // every on-disk version + applied/batch
 | `Version(ctx)` | Latest applied version, or `""` |
 | `Status(ctx)` | Every on-disk migration with `Applied` / `Batch` (`[]StatusRow`) |
 
+### Seeders (`seed`)
+
+Run every `*.sql` file in an `fs.FS` in filename order. No tracking table — authors keep seeders idempotent.
+
+```go
+ran, err := seed.Run(ctx, database, os.DirFS("database/seeders"))
+```
+
+### Cache registry (`cache`)
+
+Same opener pattern as `db`, with `CACHE_*` / `CACHE_<NAME>_*` and `CACHE_CONNECTION`.
+
+| Method | Purpose |
+|--------|---------|
+| `New(cfg)` | Bind a registry to a config source |
+| `RegisterOpener(driver, opener)` | Wire a cache driver name to an opener |
+| `Default()` / `Resolve` / `Connection` / `Close` | Same shape as `db.Registry` |
+
+There is **no** `Flush` on `contract.Cache` yet — a future release may add it for full cache clears.
+
+### Route introspection
+
+`contract.Router` includes `Routes() []RouteInfo` (`Method`, `Pattern`). Use [vormia-go-driver-chi](https://github.com/vormialabs/vormia-go-driver-chi) **v1.1.0+**.
+
 ## Contracts
 
 All three interfaces live in `contract` and depend only on the standard library.
 
-- **Router** — HTTP verbs, middleware, `Serve` / `Shutdown`, `ServeHTTP`
+- **Router** — HTTP verbs, middleware, `Serve` / `Shutdown`, `ServeHTTP`, `Routes()`
 - **Database** — `QueryContext`, `QueryRowContext`, `ExecContext`, `BeginTx`, `PingContext`, `Close`, `Rebind`
-- **Cache** — `Get`, `Set`, `Delete`, `Exists`, `Ping`, `Close`
+- **Cache** — `Get`, `Set`, `Delete`, `Exists`, `Ping`, `Close` (no `Flush` yet)
 
 ## Drivers
 
 | Driver | Contract | Repository |
 |--------|----------|------------|
-| Chi | `Router` | [vormia-go-driver-chi](https://github.com/vormialabs/vormia-go-driver-chi) |
+| Chi | `Router` | [vormia-go-driver-chi](https://github.com/vormialabs/vormia-go-driver-chi) (**v1.1.0+** for `Routes()`) |
 | SQLite | `Database` | [vormia-go-driver-sqlite](https://github.com/vormialabs/vormia-go-driver-sqlite) |
 | PostgreSQL | `Database` | [vormia-go-driver-postgresql](https://github.com/vormialabs/vormia-go-driver-postgresql) |
 | MySQL | `Database` | [vormia-go-driver-mysql](https://github.com/vormialabs/vormia-go-driver-mysql) |
@@ -160,7 +189,7 @@ All three interfaces live in `contract` and depend only on the standard library.
 
 ## Testing
 
-Tests use real chi and sqlite drivers with an in-memory database and `fstest.MapFS` for migrations — no Docker, no external services.
+Tests use real chi and sqlite drivers with an in-memory database and `fstest.MapFS` for migrations/seeders — no Docker, no external services.
 
 ```bash
 go test -v ./...
@@ -168,8 +197,8 @@ go test -v ./...
 
 ## Roadmap
 
-- **Next** — CLI `migrate*` / `db:*` commands and `--database` flag (thin front-ends over `db` + `migrate`)
-- **Later** — HTTP ergonomics, ORM/query builder, validation, auth, DI container integration
+- **Next** — CLI Group C wrappers (`db:wipe`, `migrate:fresh`, `db:seed`, `cache:ping` / `cache:forget`, `route:list`) in vormia-go-cli
+- **Later** — `Cache.Flush` (for `cache:clear`), HTTP ergonomics, ORM/query builder, validation, auth, DI container integration
 
 ## License
 

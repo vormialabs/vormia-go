@@ -2,7 +2,7 @@
 
 A walkthrough of the framework's design, the packages that make it up, and the lifecycle of an app built on it. Read the [README](../README.md) first for install and quick-start; this guide explains the *why* and *how* underneath. Release history: [RELEASE_NOTES.md](../RELEASE_NOTES.md).
 
-**Version:** v1.1.3 — kernel + contracts, connection registry (`db`), migration engine (`migrate`) including `Status`
+**Version:** v1.2.0 — kernel + contracts (incl. `Router.Routes()`), `db` + `Wipe`, `migrate`, `seed`, `cache` registry. Pair chi **v1.1.0+**.
 
 ---
 
@@ -230,7 +230,11 @@ defaultDB, err := reg.Connection("")
 // later: secondary, err := reg.Connection("mysql2")
 ```
 
-Errors are intentional and specific: unknown connection group, missing `DRIVER`, or no opener registered for that driver — each message tells you what to fix. That matters when a future CLI runs `vormia migrate --database=typo`.
+Errors are intentional and specific: unknown connection group, missing `DRIVER`, or no opener registered for that driver — each message tells you what to fix. That matters when a CLI runs `vormia migrate --database=typo`.
+
+### Wipe
+
+`db.Wipe(ctx, conn, driver)` drops every user table. Pass the driver name (`"sqlite"`, `"postgres"`, `"mysql"`) because the `Database` contract hides the engine. SQLite/Postgres wrap drops in a transaction; MySQL toggles `FOREIGN_KEY_CHECKS` and is non-atomic. Destructive — intended for `db:wipe` / `migrate:fresh` style workflows.
 
 ---
 
@@ -268,7 +272,47 @@ rows, err := m.Status(ctx)         // every on-disk version + Applied/Batch
 2. **Multi-statement MySQL** needs `multiStatements=true` on the DSN (or one statement per file). A statement splitter is a future enhancement.
 3. **Your app migrations** may use engine-specific SQL if you are not switching engines; the tracking table stays in the portable subset.
 
-Laravel translation: this is the Go equivalent of `php artisan migrate` / `migrate:rollback` / `migrate:status`, but as a library API today — CLI thin front-ends come next.
+Laravel translation: this is the Go equivalent of `php artisan migrate` / `migrate:rollback` / `migrate:status` — CLI thin front-ends live in vormia-go-cli.
+
+---
+
+## 5b. Package: `seed` — SQL Seeders
+
+File: [`seed/seed.go`](../seed/seed.go). Depends only on `contract` + stdlib.
+
+`seed.Run(ctx, conn, src)` executes every `*.sql` file in an `fs.FS` in filename order. No up/down pairing and no tracking table — write idempotent seeders (`INSERT ... ON CONFLICT` / `INSERT IGNORE`). Go-code seeders wait on an app-console execution model that does not exist yet.
+
+```go
+ran, err := seed.Run(ctx, database, os.DirFS("database/seeders"))
+```
+
+---
+
+## 5c. Package: `cache` — Named Cache Registry
+
+File: [`cache/registry.go`](../cache/registry.go). Same opener pattern as `db`, with `CACHE_*` / `CACHE_<NAME>_*` and `CACHE_CONNECTION`.
+
+```go
+creg := cache.New(cfg)
+creg.RegisterOpener("redis", func(c cache.ConnConfig) (contract.Cache, error) {
+	return redis.Open(redis.Config{Addr: c.Addr})
+})
+c, err := creg.Connection("")
+```
+
+**No `Flush` on `contract.Cache` yet** — `cache:clear` waits on a deliberate future contract change. Ping / Get / Set / Delete work today.
+
+---
+
+## 5d. `Router.Routes()` — Route Introspection
+
+`contract.Router` includes `Routes() []RouteInfo` (`Method`, `Pattern`). `RouteInfo` is a type alias to an anonymous struct so drivers (chi **v1.1.0+**) can implement it without importing vormia-go.
+
+```go
+for _, rt := range router.Routes() {
+	fmt.Println(rt.Method, rt.Pattern)
+}
+```
 
 ---
 
@@ -303,7 +347,7 @@ To write a new driver (say, a memory cache): create a new module, implement the 
 
 ### Why does `go.mod` list chi and sqlite if the framework never imports drivers?
 
-They are **test-only dependencies**. `app/kernel_test.go`, `db/registry_test.go`, and `migrate/migrate_test.go` boot real chi/sqlite (in-memory) so the suite needs no Docker. Production packages `contract`, `app`, `db`, and `migrate` never import a `vormia-go-driver-*` module — verify with `go list -deps ./db ./migrate`.
+They are **test-only dependencies**. `app/kernel_test.go`, `db/*_test.go`, `migrate/migrate_test.go`, and `seed/seed_test.go` boot real chi/sqlite (in-memory) so the suite needs no Docker. Production packages never import a `vormia-go-driver-*` module — verify with `go list -deps ./db ./migrate ./seed ./cache`.
 
 ---
 
@@ -332,7 +376,10 @@ Laravel translation table, roughly:
 | Service container binding an interface to a concrete | You pass the concrete into `New` / `WithDB` as an interface value |
 | `config/database.php` connections | `db.Registry` + `DB_*` / `DB_<NAME>_*` config |
 | `DB::connection('mysql2')` | `reg.Connection("mysql2")` |
-| `php artisan migrate` / `migrate:rollback` / `migrate:status` | `migrate.Migrator` `Up` / `Rollback` / `Status` (CLI next) |
+| `php artisan migrate` / `migrate:rollback` / `migrate:status` | `migrate.Migrator` `Up` / `Rollback` / `Status` |
+| `php artisan db:wipe` / `db:seed` | `db.Wipe` / `seed.Run` (CLI wrappers later) |
+| `php artisan route:list` | `contract.Router.Routes()` |
+| `config/cache.php` | `cache.Registry` + `CACHE_*` / `CACHE_<NAME>_*` |
 | `routes/web.php` | The `k.Routes(func(r contract.Router) { ... })` callback |
 | Global middleware in `Kernel::$middleware` | `k.Use(...)` |
 | `php artisan serve` / FPM lifecycle | `k.Run(":8080")` with built-in graceful shutdown |
@@ -343,12 +390,12 @@ Laravel translation table, roughly:
 
 ## 8. Current Scope and What's Next
 
-**v1.1.3** includes: kernel, three contracts, five external drivers, named connection registry, and migration engine (including `Status`) — plus tests proving they compose without Docker.
+**v1.2.0** includes: kernel, three contracts (incl. `Routes()`), five external drivers (chi **v1.1.0+** for Routes), `db` + `Wipe`, `migrate`, `seed`, `cache` registry — plus tests without Docker.
 
 Not here yet:
 
-- **Next** — CLI `migrate*` / `db:*` commands and `--database` flag (thin front-ends over `db` + `migrate`)
-- **Later** — HTTP ergonomics (JSON helpers, router-agnostic `Param`), ORM/query builder, validation, auth, DI container integration
+- **Next** — CLI Group C wrappers in vormia-go-cli (`db:wipe`, `migrate:fresh`, `db:seed`, `cache:ping` / `cache:forget`, `route:list`)
+- **Later** — `Cache.Flush`, HTTP ergonomics (JSON helpers, router-agnostic `Param`), ORM/query builder, validation, auth, DI container integration
 
 Until then you work close to the stdlib: raw SQL through `k.DB`, manual `w.Write` / `http.Error` in handlers, and driver-specific route parameter extraction when you need URL params.
 

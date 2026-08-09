@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+// RouteInfo is one registered route (method + pattern). Defined as a type
+// alias to an anonymous struct so router drivers can return the identical
+// type without importing this package (avoids a chi ↔ vormia-go module cycle).
+type RouteInfo = struct {
+	Method  string
+	Pattern string
+}
+
 // Router is satisfied by router drivers (chi today; gin/echo later).
 // Note: Group/Route are intentionally absent — they are concrete-typed on
 // each driver. Only the stdlib-shaped surface is portable.
@@ -25,6 +33,7 @@ type Router interface {
 	Serve(addr string) error
 	Shutdown(ctx context.Context) error
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+	Routes() []RouteInfo
 }
 
 // Database is satisfied by SQL drivers (sqlite, postgres, mysql). Every

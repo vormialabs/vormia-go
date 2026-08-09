@@ -16,8 +16,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/vormialabs/vormia-go-core v1.1.0 h1:MsPIODWauzeLFWjVnWXKJQB0AZMMbgftJpzy/z7+1Yk=
 github.com/vormialabs/vormia-go-core v1.1.0/go.mod h1:z524uJviC6GwkGMq0p5QY6/r4WzY+8lhais7ske7pos=
-github.com/vormialabs/vormia-go-driver-chi v1.0.0 h1:hsip+bxzcdsMcs8fNnR1pXLjCMySGfuK/vuQRmb5iSw=
-github.com/vormialabs/vormia-go-driver-chi v1.0.0/go.mod h1:i3bll825qgwvLR1SRrErG2TzBqqeKJDLYMFUnc5UXY4=
+github.com/vormialabs/vormia-go-driver-chi v1.1.0 h1:4R4cgyFu6wcAZ5EXE4wgh2BFHXjTrq4dp3UVIDv6+8U=
+github.com/vormialabs/vormia-go-driver-chi v1.1.0/go.mod h1:i3bll825qgwvLR1SRrErG2TzBqqeKJDLYMFUnc5UXY4=
 github.com/vormialabs/vormia-go-driver-sqlite v1.0.0 h1:/EZFNYIsz/Ks23eeoLlg3OT4JVR6eMlBojcyjUd8Y1I=
 github.com/vormialabs/vormia-go-driver-sqlite v1.0.0/go.mod h1:/RBhikfqJwVpjo9S2QmTqDsYqdF4UsGgl+0FbdYuOwo=
 golang.org/x/mod v0.37.0 h1:vF1DjpVEshcIqoEaauuHebaLk1O1forxjxBaVn884JQ=
