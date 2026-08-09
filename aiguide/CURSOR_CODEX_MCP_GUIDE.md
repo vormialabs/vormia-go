@@ -6,7 +6,7 @@ Instructions for AI coding assistants (Cursor, Codex, Copilot, MCP-based agents)
 
 ## 1. Package Facts (memorize these)
 
-- **Module:** `github.com/vormialabs/vormia-go` — **v1.2.0**, requires **Go 1.26+**
+- **Module:** `github.com/vormialabs/vormia-go` — **v1.2.1**, requires **Go 1.26+**
 - **Status:** Kernel + contracts (incl. `Router.Routes()`) + `db` (registry + `Wipe`) + `migrate` + `seed` + `cache` registry. No ORM, no validation, no auth, no CLI commands, no `Cache.Flush`, no JSON helpers, no router-agnostic `Param`. Do not pretend those exist. Pair chi driver **v1.1.0+** for `Routes()`.
 - **Production packages:**
   - `contract` (`contract/contract.go`) — `Router` (incl. `Routes()` / `RouteInfo`), `Database`, `Cache`. Stdlib imports only.
@@ -256,11 +256,11 @@ A driver is a **separate Go module** that structurally satisfies exactly one con
 | Writing `$1` placeholders directly | Write `?` and pass through `k.DB.Rebind(...)` |
 | Passing `context.Background()` in handlers | Pass `req.Context()` so client disconnects cancel work |
 | Calling `k.Run` in unit tests | Use `k.Router.ServeHTTP` with `httptest` |
-| Inventing `Cache.Flush`, CLI Group C commands, ORM, or JSON helpers as if they exist | Flush / CLI wrappers not in v1.2.0; note the gap |
+| Inventing `Cache.Flush`, CLI Group C commands, ORM, or JSON helpers as if they exist | Flush / CLI wrappers not in v1.2.1; note the gap |
 | Assuming MySQL DDL / Wipe rolls back with `BeginTx` | MySQL auto-commits DDL; Wipe is non-atomic on MySQL |
 | Manual `defer db.Close()` alongside `k.Run` | `Run` closes attached drivers on shutdown; registries need their own `Close` if you keep one |
 | Adding fields to `Kernel` config via new `New` parameters | Add a functional `Option` (`WithX`) instead |
-| Using chi older than v1.1.0 with vormia-go v1.2.0 | Upgrade chi — `Routes()` is required on `contract.Router` |
+| Using chi older than v1.1.0 with vormia-go v1.2.1 | Upgrade chi — `Routes()` is required on `contract.Router` |
 
 ## 7. Repository Conventions (when editing vormia-go itself)
 

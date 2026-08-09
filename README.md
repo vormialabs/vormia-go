@@ -2,14 +2,14 @@
 
 Vormia Go — a modular, Laravel-inspired application framework for Go that wires swappable router, database, and cache drivers behind stable contracts.
 
-**Version:** v1.2.0 — kernel + contracts (including `Router.Routes()`), `db` registry + `Wipe`, `migrate`, SQL `seed`, and `cache` registry. Pair with [vormia-go-driver-chi](https://github.com/vormialabs/vormia-go-driver-chi) **v1.1.0+** for `Routes()`. ORM, validation, auth, and CLI wrappers come later.
+**Version:** v1.2.1 — kernel + contracts (including `Router.Routes()`), `db` registry + `Wipe`, `migrate`, SQL `seed`, and `cache` registry. Pair with [vormia-go-driver-chi](https://github.com/vormialabs/vormia-go-driver-chi) **v1.1.0+** for `Routes()`. ORM, validation, auth, and CLI wrappers come later.
 
 Human walkthrough: [aiguide/GUIDE.md](aiguide/GUIDE.md). AI editor rules: [aiguide/CURSOR_CODEX_MCP_GUIDE.md](aiguide/CURSOR_CODEX_MCP_GUIDE.md). Changelog: [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## Install
 
 ```bash
-go get github.com/vormialabs/vormia-go@v1.2.0
+go get github.com/vormialabs/vormia-go@v1.2.1
 ```
 
 Requires Go 1.26+. Named connections use [`vormia-go-core/config`](https://github.com/vormialabs/vormia-go-core) (`GetString`, `Prefixed`).
@@ -189,11 +189,13 @@ All three interfaces live in `contract` and depend only on the standard library.
 
 ## Testing
 
-Tests use real chi and sqlite drivers with an in-memory database and `fstest.MapFS` for migrations/seeders — no Docker, no external services.
+Default suite uses real chi and sqlite drivers with an in-memory database and `fstest.MapFS` for migrations/seeders — no Docker required. Postgres/MySQL wipe integration tests skip unless `PG_TEST_HOST` / `MYSQL_TEST_HOST` are set (same env vars as the driver repos).
 
 ```bash
 go test -v ./...
 ```
+
+Boundary check: `go list -deps ./db ./migrate ./seed ./cache` must not list any `vormia-go-driver-*` module.
 
 ## Roadmap
 

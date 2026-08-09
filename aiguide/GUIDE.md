@@ -2,7 +2,7 @@
 
 A walkthrough of the framework's design, the packages that make it up, and the lifecycle of an app built on it. Read the [README](../README.md) first for install and quick-start; this guide explains the *why* and *how* underneath. Release history: [RELEASE_NOTES.md](../RELEASE_NOTES.md).
 
-**Version:** v1.2.0 — kernel + contracts (incl. `Router.Routes()`), `db` + `Wipe`, `migrate`, `seed`, `cache` registry. Pair chi **v1.1.0+**.
+**Version:** v1.2.1 — kernel + contracts (incl. `Router.Routes()`), `db` + `Wipe`, `migrate`, `seed`, `cache` registry. Pair chi **v1.1.0+**.
 
 ---
 
@@ -347,7 +347,7 @@ To write a new driver (say, a memory cache): create a new module, implement the 
 
 ### Why does `go.mod` list chi and sqlite if the framework never imports drivers?
 
-They are **test-only dependencies**. `app/kernel_test.go`, `db/*_test.go`, `migrate/migrate_test.go`, and `seed/seed_test.go` boot real chi/sqlite (in-memory) so the suite needs no Docker. Production packages never import a `vormia-go-driver-*` module — verify with `go list -deps ./db ./migrate ./seed ./cache`.
+They are **test-only dependencies**. `app/kernel_test.go`, `db/*_test.go`, `migrate/migrate_test.go`, and `seed/seed_test.go` boot real drivers so the suite needs no Docker for the default path (chi/sqlite in-memory; Postgres/MySQL wipe tests skip without `PG_TEST_HOST` / `MYSQL_TEST_HOST`). Production packages never import a `vormia-go-driver-*` module — verify with `go list -deps ./db ./migrate ./seed ./cache`.
 
 ---
 
@@ -390,7 +390,7 @@ Laravel translation table, roughly:
 
 ## 8. Current Scope and What's Next
 
-**v1.2.0** includes: kernel, three contracts (incl. `Routes()`), five external drivers (chi **v1.1.0+** for Routes), `db` + `Wipe`, `migrate`, `seed`, `cache` registry — plus tests without Docker.
+**v1.2.1** includes: kernel, three contracts (incl. `Routes()`), five external drivers (chi **v1.1.0+** for Routes), `db` + `Wipe`, `migrate`, `seed`, `cache` registry — plus default tests without Docker (Postgres/MySQL wipe tests are env-gated).
 
 Not here yet:
 

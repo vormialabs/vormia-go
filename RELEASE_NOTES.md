@@ -1,8 +1,47 @@
 # Release Notes
 
+## v1.2.1 — Gated Wipe Integration Tests (2026-08-09)
+
+Vormia Go **v1.2.1** is the recommended install tag. Same library surface as v1.2.0, plus Postgres/MySQL wipe integration tests gated on `PG_TEST_HOST` / `MYSQL_TEST_HOST` (they skip cleanly when unset).
+
+**Pair with** [vormia-go-driver-chi](https://github.com/vormialabs/vormia-go-driver-chi) **v1.1.0+** — older chi builds do not implement `Routes()`.
+
+### What this release includes
+
+Everything from **v1.2.0** (`db.Wipe`, `seed.Run`, `cache.Registry`, `Router.Routes()`, registry, migrator including `Status`, kernel, contracts), plus:
+
+**Gated wipe tests** — `TestWipePostgres` / `TestWipeMySQL` exercise the dialect paths against real engines when the same env vars as the driver repos are set. Default `go test ./...` still needs no Docker.
+
+### Install
+
+```bash
+go get github.com/vormialabs/vormia-go@v1.2.1
+go get github.com/vormialabs/vormia-go-driver-chi@v1.1.0
+```
+
+Requires Go 1.26+.
+
+### Testing
+
+```bash
+go test -v ./...
+```
+
+Boundary check: `go list -deps ./db ./migrate ./seed ./cache` must not list any `vormia-go-driver-*` module.
+
+### What's not in this release
+
+CLI Group C command wrappers (`db:wipe`, `migrate:fresh`, …) live in vormia-go-cli (separate plan). `Cache.Flush` / `cache:clear`, ORM, validation, auth, and HTTP ergonomics remain later work.
+
+Docs: [README](README.md), [aiguide/GUIDE.md](aiguide/GUIDE.md), [aiguide/CURSOR_CODEX_MCP_GUIDE.md](aiguide/CURSOR_CODEX_MCP_GUIDE.md).
+
+---
+
 ## v1.2.0 — Wipe, seed, cache registry, Routes() (2026-08-09)
 
-Vormia Go **v1.2.0** is the recommended install tag. It unlocks the library surface for future CLI Group C commands (`db:wipe`, `migrate:fresh`, `db:seed`, `db:fresh`, `cache:ping` / `cache:forget`, `route:list`). The CLI wrappers themselves are **not** in this module.
+Historical tag. Prefer **v1.2.1** for new installs. Feature notes below describe what first shipped with this line.
+
+Vormia Go **v1.2.0** unlocks the library surface for future CLI Group C commands (`db:wipe`, `migrate:fresh`, `db:seed`, `db:fresh`, `cache:ping` / `cache:forget`, `route:list`). The CLI wrappers themselves are **not** in this module.
 
 **Pair with** [vormia-go-driver-chi](https://github.com/vormialabs/vormia-go-driver-chi) **v1.1.0+** — older chi builds do not implement `Routes()`.
 
@@ -25,7 +64,7 @@ go get github.com/vormialabs/vormia-go@v1.2.0
 go get github.com/vormialabs/vormia-go-driver-chi@v1.1.0
 ```
 
-Requires Go 1.26+.
+Requires Go 1.26+. Prefer **v1.2.1** for new installs.
 
 ### Testing
 
@@ -45,7 +84,7 @@ Docs: [README](README.md), [aiguide/GUIDE.md](aiguide/GUIDE.md), [aiguide/CURSOR
 
 ## v1.1.3 — Migrator.Status (2026-08-07)
 
-Historical tag. Prefer **v1.2.0** for new installs. Feature notes below describe what first shipped with this line.
+Historical tag. Prefer **v1.2.1** for new installs. Feature notes below describe what first shipped with this line.
 
 Vormia Go **v1.1.3** includes everything from the connection registry and migration engine, plus `Migrator.Status`.
 
@@ -73,7 +112,7 @@ Also includes: named connection registry (`db`), migration engine (`migrate`: `U
 go get github.com/vormialabs/vormia-go@v1.1.3
 ```
 
-Requires Go 1.26+. Prefer **v1.2.0** for new installs.
+Requires Go 1.26+. Prefer **v1.2.1** for new installs.
 
 ### Testing
 
@@ -91,7 +130,7 @@ Docs: [README](README.md), [aiguide/GUIDE.md](aiguide/GUIDE.md), [aiguide/CURSOR
 
 ## v1.1.1 — Migrator.Status (2026-08-07)
 
-Historical tag. Prefer **v1.2.0** for new installs. Feature notes below describe what first shipped with this line.
+Historical tag. Prefer **v1.2.1** for new installs. Feature notes below describe what first shipped with this line.
 
 **`Status(ctx)`** returns `[]StatusRow` for every `<version>.up.sql` found in the migration source, in apply order (`Version`, `Applied`, `Batch`). Ensures the tracking table exists; does not execute migration SQL. Intended as the library surface for a future `migrate:status` CLI.
 
@@ -139,7 +178,7 @@ Placeholder style for tracking-table inserts/deletes goes through the driver's `
 go get github.com/vormialabs/vormia-go@v1.1.0
 ```
 
-Requires Go 1.26+. Prefer **v1.2.0** for new installs.
+Requires Go 1.26+. Prefer **v1.2.1** for new installs.
 
 ### Testing
 
@@ -161,7 +200,7 @@ Docs: [README](README.md), [aiguide/GUIDE.md](aiguide/GUIDE.md), [aiguide/CURSOR
 
 Vormia Go **v1.0.1** is the official Slice 1 release. It delivers the framework's spine: you can boot an application, wire in your chosen drivers, register routes and middleware, serve HTTP, and shut down gracefully — all without the framework ever depending on a concrete router, database, or cache implementation.
 
-This tag supersedes `v1.0.0` as the Slice 1 install target of its day. Prefer **v1.2.0** for new installs.
+This tag supersedes `v1.0.0` as the Slice 1 install target of its day. Prefer **v1.2.1** for new installs.
 
 ### What this release does
 
@@ -212,4 +251,4 @@ ORM/query builder, validation, auth, and CLI scaffolding are planned for later s
 
 ## v1.0.0 — Slice 1: Kernel + Contracts (2026-07-28)
 
-Initial Slice 1 tag. Prefer **v1.2.0** for new installs.
+Initial Slice 1 tag. Prefer **v1.2.1** for new installs.
